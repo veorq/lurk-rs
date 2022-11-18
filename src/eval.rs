@@ -1744,7 +1744,7 @@ mod test {
         expected_emitted: Option<Vec<Ptr<Fr>>>,
         expected_iterations: usize,
     ) {
-        let limit = 100000;
+        let limit = 10000;
         let env = empty_sym_env(&s);
         let (
             IO {
@@ -1780,6 +1780,55 @@ mod test {
                 .all(|(a, b)| s.ptr_eq(a, &b).unwrap()));
         }
         assert_eq!(expected_iterations, iterations);
+    }
+
+    fn test_aux3(
+        s: &mut Store<Fr>,
+        expr: &Ptr<Fr>,
+        expected_result: Option<Ptr<Fr>>,
+        expected_env: Option<Ptr<Fr>>,
+        expected_cont: Option<ContPtr<Fr>>,
+        expected_emitted: Option<Vec<Ptr<Fr>>>,
+        expected_iterations: usize,
+        limit: usize,
+    ) {
+        let env = empty_sym_env(&s);
+        let (
+            IO {
+                expr: new_expr,
+                env: new_env,
+                cont: new_cont,
+            },
+            iterations,
+            emitted,
+        ) = Evaluator::new(*expr, env, s, limit).eval().unwrap();
+
+
+        if let Some(expected_result) = expected_result {
+            dbg!(
+                &expected_result.fmt_to_string(&s),
+                &new_expr.fmt_to_string(&s),
+            );
+            assert!(s.ptr_eq(&expected_result, &new_expr).unwrap());
+        }
+        if let Some(expected_env) = expected_env {
+            assert!(s.ptr_eq(&expected_env, &new_env).unwrap());
+        }
+        if let Some(expected_cont) = expected_cont {
+            assert_eq!(expected_cont, new_cont);
+        } else {
+            assert_eq!(s.intern_cont_terminal(), new_cont);
+        }
+        if let Some(expected_emitted) = expected_emitted {
+            assert_eq!(expected_emitted.len(), emitted.len());
+
+            assert!(expected_emitted
+                .iter()
+                .zip(emitted)
+                .all(|(a, b)| s.ptr_eq(a, &b).unwrap()));
+        }
+        assert_eq!(expected_iterations, iterations);
+
     }
 
     #[test]
@@ -3646,5 +3695,56 @@ mod test {
         let error = s.get_cont_error();
 
         test_aux(s, expr, None, None, Some(error), None, 3);
+    }
+
+    #[test]
+    fn evaluate_recursion_100() {
+        let s = &mut Store::<Fr>::default();
+        let expr = "(letrec ((exp (lambda (base)
+                                  (lambda (exponent)
+                                    (if (= 0 exponent)
+                                        1
+                                        (* base ((exp base) (- exponent 1))))))))
+                   ((exp 5) (- 0 1)))";
+
+        let limit = 100;
+        let expected = s.num(0);
+        let terminal = s.get_cont_terminal();
+        let ptr = s.read(expr).unwrap();
+        test_aux3(s, &ptr, Some(expected), None, Some(terminal), None, 0, limit);
+    }
+
+    #[test]
+    fn evaluate_recursion_1k() {
+        let s = &mut Store::<Fr>::default();
+        let expr = "(letrec ((exp (lambda (base)
+                                  (lambda (exponent)
+                                    (if (= 0 exponent)
+                                        1
+                                        (* base ((exp base) (- exponent 1))))))))
+                   ((exp 5) (- 0 1)))";
+
+        let limit = 1000;
+        let expected = s.num(0);
+        let terminal = s.get_cont_terminal();
+        let ptr = s.read(expr).unwrap();
+        test_aux3(s, &ptr, Some(expected), None, Some(terminal), None, 0, limit);
+    }
+
+    #[test]
+    fn evaluate_recursion_10k() {
+        let s = &mut Store::<Fr>::default();
+        let expr = "(letrec ((exp (lambda (base)
+                                  (lambda (exponent)
+                                    (if (= 0 exponent)
+                                        1
+                                        (* base ((exp base) (- exponent 1))))))))
+                   ((exp 5) (- 0 1)))";
+
+        let limit = 10000;
+        let expected = s.num(0);
+        let terminal = s.get_cont_terminal();
+        let ptr = s.read(expr).unwrap();
+        test_aux3(s, &ptr, Some(expected), None, Some(terminal), None, 0, limit);
     }
 }
